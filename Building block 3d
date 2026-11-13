@@ -1,0 +1,217 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Block Builder 2.0</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial}
+canvas{display:block;touch-action:none}
+#ui{
+position:fixed;top:10px;left:10px;right:10px;
+background:#171b29;color:white;padding:12px;
+border-radius:15px;z-index:5;
+}
+button,select{
+padding:12px;border:0;border-radius:9px;
+margin:3px;font-weight:bold;
+}
+button{background:#39aaff;color:white}
+#info{font-size:13px}
+</style>
+</head>
+<body>
+
+<div id="ui">
+<b>🏗️ BLOCK BUILDER 2.0</b>
+<br><br>
+<button onclick="mode='build'">BUILD</button>
+<button onclick="mode='delete'">DELETE</button>
+<select id="color">
+<option value="#ff4444">Red</option>
+<option value="#3388ff">Blue</option>
+<option value="#33dd66">Green</option>
+<option value="#ffdd33">Yellow</option>
+<option value="#ffffff">White</option>
+<option value="#995522">Wood</option>
+</select>
+<button onclick="save()">SAVE</button>
+<button onclick="load()">LOAD</button>
+<div id="info">Tap the ground to build blocks.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+
+const camera=new THREE.PerspectiveCamera(
+65,innerWidth/innerHeight,.1,500
+);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x555555,2));
+
+const sun=new THREE.DirectionalLight(0xffffff,1.5);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(100,100),
+new THREE.MeshStandardMaterial({color:0x55aa55})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+const grid=new THREE.GridHelper(100,100);
+scene.add(grid);
+
+let blocks=[];
+let mode="build";
+let angle=.8;
+let elevation=.8;
+let distance=17;
+
+const cubeGeo=new THREE.BoxGeometry(1,1,1);
+
+function build(x,y,z,color){
+const cube=new THREE.Mesh(
+cubeGeo,
+new THREE.MeshStandardMaterial({color:color})
+);
+cube.position.set(x,y,z);
+scene.add(cube);
+blocks.push(cube);
+}
+
+function save(){
+const data=blocks.map(b=>({
+x:b.position.x,y:b.position.y,z:b.position.z,
+c:b.material.color.getHex()
+}));
+localStorage.setItem("builderWorld",JSON.stringify(data));
+document.getElementById("info").innerText="World saved!";
+}
+
+function load(){
+blocks.forEach(b=>scene.remove(b));
+blocks=[];
+const data=JSON.parse(localStorage.getItem("builderWorld")||"[]");
+data.forEach(b=>build(b.x,b.y,b.z,b.c));
+document.getElementById("info").innerText="World loaded!";
+}
+
+let startX=0,startY=0;
+let moved=false;
+let lastDistance=0;
+
+renderer.domElement.addEventListener("pointerdown",e=>{
+startX=e.clientX;
+startY=e.clientY;
+moved=false;
+});
+
+renderer.domElement.addEventListener("pointermove",e=>{
+if(e.buttons===0)return;
+if(Math.abs(e.clientX-startX)>5 ||
+Math.abs(e.clientY-startY)>5)moved=true;
+});
+
+renderer.domElement.addEventListener("pointerup",e=>{
+if(moved)return;
+if(e.clientY<140)return;
+
+const rect=renderer.domElement.getBoundingClientRect();
+const mouse=new THREE.Vector2(
+((e.clientX-rect.left)/rect.width)*2-1,
+-((e.clientY-rect.top)/rect.height)*2+1
+);
+
+const ray=new THREE.Raycaster();
+ray.setFromCamera(mouse,camera);
+
+const hit=ray.intersectObjects([ground,...blocks]);
+
+if(!hit.length)return;
+
+const h=hit[0];
+
+if(mode==="delete"){
+if(h.object!==ground){
+scene.remove(h.object);
+blocks=blocks.filter(b=>b!==h.object);
+}
+}else{
+let p=h.point.clone();
+if(h.object!==ground)p.add(h.face.normal);
+build(
+Math.round(p.x),
+Math.round(p.y),
+Math.round(p.z),
+document.getElementById("color").value
+);
+}
+});
+
+let pointers=new Map();
+let previousX=0,previousY=0;
+
+renderer.domElement.addEventListener("pointerdown",e=>{
+pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+});
+
+renderer.domElement.addEventListener("pointermove",e=>{
+if(!pointers.has(e.pointerId))return;
+let old=pointers.get(e.pointerId);
+let dx=e.clientX-old.x;
+let dy=e.clientY-old.y;
+
+if(pointers.size===1 && e.buttons){
+angle-=dx*.008;
+elevation=Math.max(.15,Math.min(1.45,elevation+dy*.008));
+}
+if(pointers.size===2){
+let pts=[...pointers.values()];
+let d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+if(lastDistance){
+distance=Math.max(5,Math.min(50,distance+(lastDistance-d)*.04));
+}
+lastDistance=d;
+}
+pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+});
+
+renderer.domElement.addEventListener("pointerup",e=>{
+pointers.delete(e.pointerId);
+lastDistance=0;
+});
+renderer.domElement.addEventListener("pointercancel",e=>{
+pointers.delete(e.pointerId);
+lastDistance=0;
+});
+
+function animate(){
+requestAnimationFrame(animate);
+camera.position.set(
+Math.sin(angle)*distance,
+elevation*distance,
+Math.cos(angle)*distance
+);
+camera.lookAt(0,0,0);
+renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
