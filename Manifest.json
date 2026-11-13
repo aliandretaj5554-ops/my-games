@@ -1,1 +1,13 @@
 
+{
+  "name": "Building Block 3D",
+  "short_name": "Block Builder",
+  "description": "Build amazing houses, towers and cities in your own 3D building world!",
+  "start_url": "/my-games/",
+  "scope": "/my-games/",
+  "display": "standalone",
+  "background_color": "#87ceeb",
+  "theme_color": "#3388ff",
+  "orientation": "landscape"
+}
+
